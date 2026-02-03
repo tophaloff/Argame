@@ -12,41 +12,53 @@ from datetime import datetime
 # --- CONFIGURATION & STYLE GAMEBOY ---
 st.set_page_config(page_title="Argame Retro", page_icon="🎮", layout="centered")
 
-# Injection CSS : On garde ton design préféré mais on corrige les couleurs de texte
 st.markdown("""
     <style>
-    /* Fond de la console */
-    .stApp {
+    /* 1. FOND GLOBAL ET MENU LATÉRAL */
+    .stApp, [data-testid="stSidebar"] {
         background-color: #9ca0a8 !important;
     }
-    
-    /* TOUT LE TEXTE EN NOIR PUR (Correction lisibilité) */
-    html, body, [class*="css"], .stMarkdown, p, h1, h2, h3, label {
+
+    /* 2. FORCE TOUT LE TEXTE EN NOIR (Corps et Menu) */
+    html, body, [class*="css"], .stMarkdown, p, h1, h2, h3, label, span {
         color: #000000 !important;
-        font-family: 'Courier New', Courier, monospace;
+        font-family: 'Courier New', Courier, monospace !important;
+        font-weight: bold !important;
     }
 
-    /* Style de l'écran vert LCD */
+    /* 3. STYLE SPÉCIFIQUE DU MENU LATÉRAL (Correction de ta photo) */
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        color: #000000 !important;
+        font-size: 1.2rem !important;
+    }
+    
+    /* Boutons radio du menu */
+    [data-testid="stSidebar"] .st-bq {
+        color: #000000 !important;
+    }
+
+    /* 4. ÉCRAN VERT LCD */
     .stAlert, div[data-testid="stExpander"] {
         background-color: #8bac0f !important;
-        border: 2px solid #333 !important;
+        border: 3px solid #333 !important;
         color: #0f380f !important;
     }
 
-    /* Boutons A/B (Rouge) */
+    /* 5. BOUTONS ROUGES A/B */
     div.stButton > button {
         background-color: #8b1d44 !important;
         color: white !important;
-        border-radius: 20px;
-        border: 2px solid #333;
-        font-weight: bold;
+        border-radius: 20px !important;
+        border: 3px solid #333 !important;
+        font-size: 1.1rem !important;
+        text-transform: uppercase;
     }
 
-    /* Inputs */
+    /* 6. CHAMPS DE SAISIE */
     .stTextInput>div>div>input {
         background-color: #cadc9f !important;
         color: #0f380f !important;
-        border: 2px solid #333 !important;
+        border: 3px solid #333 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -54,7 +66,6 @@ st.markdown("""
 DB_FILE = "ma_collection.csv"
 
 # --- FONCTIONS TECHNIQUES ---
-
 def get_price(query):
     if not query or len(query) < 3: return None
     url = f"https://www.pricecharting.com/search-products?q={query.replace(' ', '+')}&type=videogames"
@@ -78,79 +89,64 @@ def load_db():
     if os.path.exists(DB_FILE):
         try:
             df = pd.read_csv(DB_FILE)
-            if all(c in df.columns for c in cols):
-                return df
+            if all(c in df.columns for c in cols): return df
         except: pass
     return pd.DataFrame(columns=cols)
 
-# --- NAVIGATION (Retour au menu que tu aimais) ---
-st.sidebar.title("🎮 MENU")
-page = st.sidebar.radio("Navigation", ["🔍 Scanner un jeu", "📦 Ma Collection"])
+# --- NAVIGATION ---
+st.sidebar.title("🕹️ MENU")
+page = st.sidebar.radio("MODE :", ["🔍 SCANNER UN JEU", "📦 MA COLLECTION"])
 
-if page == "🔍 Scanner un jeu":
+if page == "🔍 SCANNER UN JEU":
     st.title("📟 NOUVEAU SCAN")
+    manual_query = st.text_input("NOM OU EAN :")
     
-    manual_query = st.text_input("RECHERCHE (NOM OU CODE-BARRE)")
-    
-    if st.button("🔴 LANCER L'APPAREIL PHOTO"):
-        img_file = st.camera_input("SCANNER")
+    if st.button("🔴 START CAMERA"):
+        img_file = st.camera_input("SCAN")
         if img_file:
             file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
             img = cv2.imdecode(file_bytes, 1)
-            
             barcodes = decode(img)
             query = barcodes[0].data.decode('utf-8') if barcodes else ""
-            
             if not query:
                 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
                 query = pytesseract.image_to_string(gray).strip()
-            
             if len(query) > 2: manual_query = query
 
     if manual_query:
-        with st.spinner("RECHERCHE..."):
-            res = get_price(manual_query)
-            if res:
-                st.markdown(f"### 🎯 {res['nom']}")
-                c1, c2 = st.columns(2)
-                c1.metric("LOOSE", f"{res['loose']} €")
-                c2.metric("CIB", f"{res['cib']} €")
-                
-                if st.button("➕ AJOUTER À MA COLLECTION"):
-                    db = load_db()
-                    new_row = {"Jeu": res['nom'], "Prix Loose (€)": res['loose'], "Prix CIB (€)": res['cib'], "Date Ajout": datetime.now().strftime("%d/%m/%Y")}
-                    db = pd.concat([db, pd.DataFrame([new_row])], ignore_index=True)
-                    db.to_csv(DB_FILE, index=False)
-                    st.success("JEU ENREGISTRÉ !")
-            else:
-                st.error("JEU NON TROUVÉ")
+        res = get_price(manual_query)
+        if res:
+            st.markdown(f"### 🎯 {res['nom']}")
+            c1, c2 = st.columns(2)
+            c1.metric("LOOSE", f"{res['loose']}€")
+            c2.metric("CIB", f"{res['cib']}€")
+            if st.button("➕ AJOUTER"):
+                db = load_db()
+                new_row = {"Jeu": res['nom'], "Prix Loose (€)": res['loose'], "Prix CIB (€)": res['cib'], "Date Ajout": datetime.now().strftime("%d/%m/%Y")}
+                db = pd.concat([db, pd.DataFrame([new_row])], ignore_index=True)
+                db.to_csv(DB_FILE, index=False)
+                st.success("OK !")
+        else: st.error("NON TROUVÉ")
 
-else: # --- PAGE COLLECTION (De retour !) ---
+else: # --- MA COLLECTION ---
     st.title("📦 MA COLLECTION")
     db = load_db()
-    
     if not db.empty:
         total = db["Prix Loose (€)"].sum()
-        st.subheader(f"VALEUR TOTALE (LOOSE) : {round(total, 2)} €")
-        
-        if st.button("🔄 ACTUALISER LES COTES"):
-            with st.spinner("MISE À JOUR..."):
-                for i, row in db.iterrows():
-                    upd = get_price(row['Jeu'])
-                    if upd:
-                        db.at[i, "Prix Loose (€)"] = upd['loose']
-                        db.at[i, "Prix CIB (€)"] = upd['cib']
-                db.to_csv(DB_FILE, index=False)
-                st.rerun()
-
-        st.divider()
+        st.subheader(f"VALEUR TOTALE : {round(total, 2)} €")
+        if st.button("🔄 ACTUALISER"):
+            for i, row in db.iterrows():
+                upd = get_price(row['Jeu'])
+                if upd:
+                    db.at[i, "Prix Loose (€)"] = upd['loose']
+                    db.at[i, "Prix CIB (€)"] = upd['cib']
+            db.to_csv(DB_FILE, index=False)
+            st.rerun()
         for index, row in db.iterrows():
             with st.expander(f"🎮 {row['Jeu']}"):
-                st.write(f"Loose: {row['Prix Loose (€)']} € | CIB: {row['Prix CIB (€)']} €")
-                st.write(f"Ajouté le: {row['Date Ajout']}")
+                st.write(f"Loose: {row['Prix Loose (€)']}€ | CIB: {row['Prix CIB (€)']}€")
                 if st.button(f"🗑️ SUPPRIMER", key=f"del_{index}"):
                     db = db.drop(index)
                     db.to_csv(DB_FILE, index=False)
                     st.rerun()
-    else:
-        st.info("TA COLLECTION EST VIDE POUR LE MOMENT.")
+    else: st.info("VIDE")
