@@ -3,3 +3,5 @@ requests
 beautifulsoup4
 opencv-python-headless
 pyzbar
+pytesseract
+pandas
