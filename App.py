@@ -9,37 +9,47 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# --- CONFIGURATION SIMPLE ---
+# --- CONFIGURATION ---
 st.set_page_config(page_title="Argame Retro", page_icon="🎮")
 
-# CSS Minimaliste : On ne touche pas à la structure du menu (Sidebar)
+# --- DESIGN GAMEBOY CORRECTIF (Sidebar Lisible) ---
 st.markdown("""
     <style>
-    /* On change juste les couleurs de base sans bloquer les éléments */
-    .stApp {
-        background-color: #9ca0a8;
+    /* 1. Fond principal et fond de la sidebar en GRIS CLAIR */
+    .stApp, [data-testid="stSidebar"], [data-testid="stSidebar"] > div:first-child {
+        background-color: #9ca0a8 !important;
     }
-    /* Texte en noir pour la lisibilité */
-    p, h1, h2, h3, label, span {
+    
+    /* 2. FORCE TOUT LE TEXTE EN NOIR (Corps et Sidebar) */
+    html, body, [class*="css"], .stMarkdown, p, h1, h2, h3, label, span, li {
+        color: #000000 !important;
+        font-family: 'Courier New', Courier, monospace !important;
+        font-weight: bold !important;
+    }
+
+    /* 3. STYLE DES BOUTONS RADIO DANS LE MENU */
+    [data-testid="stSidebar"] .st-at, [data-testid="stSidebar"] .st-ae {
         color: #000000 !important;
     }
-    /* Boutons style GameBoy */
-    div.stButton > button {
-        background-color: #8b1d44 !important;
-        color: white !important;
-        border: 2px solid #000;
-    }
-    /* Zones d'info style écran LCD */
+
+    /* 4. ÉCRAN VERT LCD (Conteneurs) */
     .stAlert, div[data-testid="stExpander"] {
         background-color: #8bac0f !important;
         border: 2px solid #333 !important;
+    }
+
+    /* 5. BOUTONS ROUGES */
+    div.stButton > button {
+        background-color: #8b1d44 !important;
+        color: white !important;
+        border: 2px solid #000 !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
 DB_FILE = "ma_collection.csv"
 
-# --- FONCTIONS ---
+# --- FONCTIONS TECHNIQUES ---
 def get_price(query):
     if not query or len(query) < 3: return None
     url = f"https://www.pricecharting.com/search-products?q={query.replace(' ', '+')}&type=videogames"
@@ -52,7 +62,6 @@ def get_price(query):
             name = row.find('td', class_='title').text.strip()
             p_loose = row.find('td', class_='price numeric loose').text.strip()
             p_cib = row.find('td', class_='price numeric cib').text.strip()
-            # Conversion $ -> €
             val_loose = float(p_loose.replace('$','').replace(',','')) / 1.08
             val_cib = float(p_cib.replace('$','').replace(',','')) / 1.08
             return {"nom": name, "loose": round(val_loose, 2), "cib": round(val_cib, 2)}
@@ -69,16 +78,14 @@ def load_db():
     return pd.DataFrame(columns=cols)
 
 # --- NAVIGATION ---
-# Utilisation de la sidebar native sans modification de position
-with st.sidebar:
-    st.header("🕹️ MENU")
-    page = st.radio("MODE :", ["🔍 SCANNER", "📦 MA COLLECTION"])
+st.sidebar.title("🕹️ MENU")
+page = st.sidebar.radio("MODES", ["🔍 SCANNER", "📦 MA COLLECTION"])
 
 if page == "🔍 SCANNER":
     st.title("📟 NOUVEAU SCAN")
-    manual_query = st.text_input("NOM OU EAN :")
+    manual_query = st.text_input("NOM OU CODE-BARRE :")
     
-    if st.button("🔴 LANCER CAMERA"):
+    if st.button("🔴 CAMERA"):
         img_file = st.camera_input("SCAN")
         if img_file:
             file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
@@ -102,9 +109,8 @@ if page == "🔍 SCANNER":
                 new_row = {"Jeu": res['nom'], "Prix Loose (€)": res['loose'], "Prix CIB (€)": res['cib'], "Date Ajout": datetime.now().strftime("%d/%m/%Y")}
                 db = pd.concat([db, pd.DataFrame([new_row])], ignore_index=True)
                 db.to_csv(DB_FILE, index=False)
-                st.success("JEU SAUVÉ !")
-        else:
-            st.error("NON TROUVÉ")
+                st.success("SAUVÉ !")
+        else: st.error("NON TROUVÉ")
 
 else:
     st.title("📦 MA COLLECTION")
@@ -112,7 +118,6 @@ else:
     if not db.empty:
         total = db["Prix Loose (€)"].sum()
         st.subheader(f"VALEUR TOTALE : {round(total, 2)} €")
-        
         if st.button("🔄 ACTUALISER"):
             for i, row in db.iterrows():
                 upd = get_price(row['Jeu'])
@@ -121,7 +126,6 @@ else:
                     db.at[i, "Prix CIB (€)"] = upd['cib']
             db.to_csv(DB_FILE, index=False)
             st.rerun()
-
         for index, row in db.iterrows():
             with st.expander(f"🎮 {row['Jeu']}"):
                 st.write(f"Loose: {row['Prix Loose (€)']}€ | CIB: {row['Prix CIB (€)']}€")
@@ -129,5 +133,4 @@ else:
                     db = db.drop(index)
                     db.to_csv(DB_FILE, index=False)
                     st.rerun()
-    else:
-        st.info("COLLECTION VIDE")
+    else: st.info("VIDE")
