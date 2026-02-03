@@ -9,60 +9,76 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# --- CONFIGURATION & STYLE GAMEBOY OPTIMISÉ ---
+# --- CONFIGURATION & STYLE GAMEBOY ULTIME ---
 st.set_page_config(page_title="Argame Retro", page_icon="🎮", layout="centered")
 
 st.markdown("""
     <style>
-    /* Police Google Fonts style Retro */
     @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
 
-    .main {
-        background-color: #9ca0a8; 
+    /* Fond de la console */
+    .stApp {
+        background-color: #9ca0a8 !important;
+    }
+
+    /* TOUT LE TEXTE EN NOIR PAR DÉFAUT */
+    * {
+        font-family: 'VT323', monospace !important;
+        color: #000000 !important;
+        font-size: 1.3rem !important;
+    }
+
+    /* TITRES PLUS GRANDS */
+    h1, h2, h3 {
+        font-size: 2.5rem !important;
+        text-transform: uppercase;
+        color: #1a1a1a !important;
+    }
+
+    /* L'ÉCRAN VERT LCD (Conteneurs de texte) */
+    .stAlert, div[data-testid="stExpander"], div[data-baseweb="notification"] {
+        background-color: #8bac0f !important;
+        border: 3px solid #333 !important;
+        border-radius: 0px !important;
     }
     
-    /* Global Text Style */
-    html, body, [class*="css"], .stMarkdown, p, h1, h2, h3 {
-        font-family: 'VT323', monospace !important;
-        color: #1a1a1a !important; /* Noir profond pour la lisibilité */
-        font-size: 1.2rem;
+    /* CORRECTION LISIBILITÉ MESSAGES (Rouge/Bleu/Jaune) */
+    div[data-testid="stNotificationContent"] p, .stAlert p {
+        color: #0f380f !important; /* Vert foncé sur fond vert LCD */
+        font-weight: bold !important;
+        font-size: 1.5rem !important;
     }
 
-    /* Écran LCD Vert (Zones d'info) */
-    .stAlert, .css-1r6slb0, div[data-testid="stExpander"] {
-        background-color: #8bac0f !important;
-        border: 2px solid #333 !important;
+    /* INPUT (Zone de saisie) */
+    input {
+        background-color: #cadc9f !important;
         color: #0f380f !important;
+        border: 3px solid #333 !important;
+        font-size: 1.4rem !important;
     }
 
-    /* Boutons A/B (Rouge) */
+    /* BOUTONS (Rouge bordeaux) */
     div.stButton > button {
         background-color: #8b1d44 !important;
         color: #ffffff !important;
-        border-radius: 5px;
-        border: 2px solid #333;
-        font-size: 1.5rem !important;
-        width: 100%;
+        border: 3px solid #333;
+        font-size: 1.6rem !important;
+        text-transform: uppercase;
+        box-shadow: 4px 4px 0px #444;
     }
 
-    /* Inputs */
-    .stTextInput>div>div>input {
-        background-color: #cadc9f !important;
+    /* METRICS (Prix) */
+    div[data-testid="stMetric"] label, div[data-testid="stMetricValue"] {
         color: #0f380f !important;
-        border: 2px solid #333 !important;
-    }
-    
-    /* Metrics (Prix) */
-    div[data-testid="stMetricValue"] {
-        color: #0f380f !important;
-        font-weight: bold;
+        background-color: #8bac0f;
     }
     </style>
     """, unsafe_allow_html=True)
 
-DB_FILE = "ma_collection.csv"
+# --- GARDE LE RESTE DU CODE (get_price, load_db, etc.) IDENTIQUE ---
+# ... (Tes fonctions techniques ici) ...
 
-# --- FONCTIONS TECHNIQUES ---
+DB_FILE = "ma_collection.csv"
 
 def get_price(query):
     if not query or len(query) < 3: return None
@@ -100,7 +116,7 @@ if menu == "🔍 SCAN":
     st.header("📟 SCANNER")
     manual_query = st.text_input("NOM DU JEU / EAN", placeholder="Ex: Pokemon Blue")
     
-    if st.button("🔴 CAMERA"):
+    if st.button("🔴 START CAMERA"):
         img_file = st.camera_input("SCAN")
         if img_file:
             file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
@@ -127,7 +143,7 @@ if menu == "🔍 SCAN":
                 db.to_csv(DB_FILE, index=False)
                 st.success("ENREGISTRÉ !")
         else:
-            st.warning("RIEN TROUVÉ")
+            st.error("RIEN TROUVÉ")
 
 else:
     st.header("📦 MA COLLECTION")
