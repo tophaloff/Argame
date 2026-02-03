@@ -1,56 +1,74 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+import cv2
+import numpy as np
+from pyzbar.pyzbar import decode
 
-st.set_page_config(page_title="Argame - Argus Gratuit", page_icon="🎮")
+# Configuration
+st.set_page_config(page_title="Argame Pro", page_icon="🎮")
 
-# --- FONCTION DE RÉCUPÉRATION DES PRIX ---
-def get_price_charting(game_name):
-    # On prépare l'URL de recherche
-    search_url = f"https://www.pricecharting.com/search-products?q={game_name.replace(' ', '+')}&type=videogames"
-    headers = {"User-Agent": "Mozilla/5.0"} # Pour ne pas être bloqué par le site
-    
+def get_price(query):
+    """Récupère le prix sur PriceCharting"""
+    search_url = f"https://www.pricecharting.com/search-products?q={query.replace(' ', '+')}&type=videogames"
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        response = requests.get(search_url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # On cherche le premier tableau de résultats
-        product_row = soup.find('tr', id=lambda x: x and x.startswith('product-'))
-        
-        if product_row:
-            name = product_row.find('td', class_='title').text.strip()
-            # Extraction des prix (on nettoie les symboles $)
-            price_loose = product_row.find('td', class_='price numeric loose').text.strip()
-            price_cib = product_row.find('td', class_='price numeric cib').text.strip()
-            
-            return {"nom": name, "loose": price_loose, "cib": price_cib}
-        return None
-    except:
-        return None
+        res = requests.get(search_url, headers=headers)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        row = soup.find('tr', id=lambda x: x and x.startswith('product-'))
+        if row:
+            name = row.find('td', class_='title').text.strip()
+            p_loose = row.find('td', class_='price numeric loose').text.strip()
+            p_cib = row.find('td', class_='price numeric cib').text.strip()
+            # Conversion € (1.08)
+            l_euro = f"{float(p_loose.replace('$','').replace(',',''))/1.08:.2f} €"
+            c_euro = f"{float(p_cib.replace('$','').replace(',',''))/1.08:.2f} €"
+            return name, l_euro, c_euro
+    except: return None, None, None
+    return None, None, None
 
-# --- INTERFACE ---
 st.title("🎮 Argame")
-st.write("Récupération des prix en direct de PriceCharting")
 
-query = st.text_input("Nom du jeu (ex: Mario 64, Zelda...)")
+# --- SECTION SCANNER (Appareil photo masqué par défaut) ---
+st.subheader("📸 Scan de jeu")
+if "show_camera" not in st.session_state:
+    st.session_state.show_camera = False
 
-if query:
-    with st.spinner('Recherche de la cote...'):
-        result = get_price_charting(query)
+if not st.session_state.show_camera:
+    if st.button("Ouvrir le Scanner / Appareil Photo"):
+        st.session_state.show_camera = True
+        st.rerun()
+else:
+    if st.button("Fermer la caméra"):
+        st.session_state.show_camera = False
+        st.rerun()
+    
+    img_file = st.camera_input("Placez le code-barre ou le jeu devant l'objectif")
+    
+    if img_file:
+        # Lecture du code-barre
+        file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
+        opencv_image = cv2.imdecode(file_bytes, 1)
+        det_barcodes = decode(opencv_image)
         
-        if result:
-            st.success(f"Résultat trouvé : **{result['nom']}**")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.metric("Prix Loose (Cartouche)", result['loose'])
-            with col2:
-                st.metric("Prix Complet (CIB)", result['cib'])
-            
-            st.info("Note : Les prix sont convertis du $ vers l'€ approximativement selon le marché US.")
+        if det_barcodes:
+            barcode_data = det_barcodes[0].data.decode('utf-8')
+            st.success(f"Code-barre détecté : {barcode_data}")
+            # On peut essayer de chercher le prix directement avec le code
+            name, l, c = get_price(barcode_data)
+            if name:
+                st.metric(name, f"Loose: {l} | CIB: {c}")
         else:
-            st.error("Désolé, je n'ai pas trouvé ce jeu. Essayez d'être plus précis.")
+            st.warning("Aucun code-barre lisible. Essayez de mieux l'éclairer.")
 
 st.divider()
-st.subheader("📸 Scan / Photo")
-st.camera_input("Scanner pour archive")
+
+# --- RECHERCHE MANUELLE ---
+query = st.text_input("Ou tapez le nom du jeu :")
+if query:
+    name, l, c = get_price(query)
+    if name:
+        st.success(f"Résultat : {name}")
+        st.write(f"**Loose :** {l} | **Complet :** {c}")
+    else:
+        st.error("Jeu non trouvé.")
