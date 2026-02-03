@@ -1,36 +1,37 @@
 import streamlit as st
+import pandas as pd
 
-# Configuration look & feel
-st.set_page_config(page_title="Argame - Argus Jeux Vidéo", page_icon="🎮")
+st.set_page_config(page_title="Argame - Argus Pro", page_icon="🎮")
 
-st.markdown("""
-    <style>
-    .main { background: linear-gradient(135deg, #0f2027, #203a43); color: white; }
-    .stButton>button { background-color: #2ecc71; color: black; font-weight: bold; border-radius: 10px; }
-    </style>
-    """, unsafe_allow_html=True)
+# --- BASE DE DONNÉES FICTIVE (À remplacer par une API plus tard) ---
+data = {
+    "jeu": ["Pokemon Bleu", "Zelda Ocarina of Time", "Mario 64", "Sonic Adventure"],
+    "console": ["Gameboy", "N64", "N64", "Dreamcast"],
+    "loose": [45, 50, 35, 25],
+    "cib": [150, 130, 100, 60],
+    "neuf": [900, 850, 600, 200]
+}
+df = pd.DataFrame(data)
 
 st.title("🎮 Argame")
-st.write("Scannez ou recherchez la cote de vos jeux vidéo.")
 
-# 1. Option de Scan (Photo)
-st.subheader("📸 Reconnaissance par image")
-image_file = st.camera_input("Prenez une photo du jeu (loose ou boîte)")
+# --- RECHERCHE ---
+query = st.text_input("Rechercher un titre (ex: Pokemon)...")
 
-if image_file:
-    st.image(image_file, caption="Image capturée", use_container_width=True)
-    st.info("Analyse de l'image en cours... (Bientôt disponible avec l'IA)")
+if query:
+    # On cherche dans notre base de données
+    resultats = df[df['jeu'].str.contains(query, case=False)]
+    
+    if not resultats.empty:
+        for index, row in resultats.iterrows():
+            st.header(f"{row['jeu']} ({row['console']})")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Loose", f"{row['loose']}€")
+            c2.metric("Complet", f"{row['cib']}€")
+            c3.metric("Neuf", f"{row['neuf']}€")
+    else:
+        st.error("Jeu non trouvé dans la base de données actuelle.")
 
 st.divider()
-
-# 2. Recherche manuelle
-st.subheader("🔍 Recherche manuelle")
-nom_jeu = st.text_input("Entrez le nom du jeu :")
-
-if nom_jeu:
-    # Simulation de résultats
-    st.success(f"Résultats pour : {nom_jeu}")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Loose", "45€", "+5%")
-    col2.metric("Complet (CIB)", "120€", "Stable")
-    col3.metric("Neuf", "850€", "-2%")
+st.subheader("📸 Scan de cartouche")
+st.camera_input("Prendre une photo")
