@@ -4,12 +4,18 @@ from bs4 import BeautifulSoup
 import cv2
 import numpy as np
 from pyzbar.pyzbar import decode
+import pytesseract
 
-# Configuration
-st.set_page_config(page_title="Argame Pro", page_icon="🎮")
+# --- FONCTION DE PRÉ-TRAITEMENT IMAGE ---
+def preprocess_for_ocr(opencv_image):
+    # 1. Conversion en niveaux de gris
+    gray = cv2.cvtColor(opencv_image, cv2.COLOR_BGR2GRAY)
+    # 2. Augmentation du contraste et réduction du bruit
+    gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    return gray
 
 def get_price(query):
-    """Récupère le prix sur PriceCharting"""
+    if not query or len(query) < 3: return None
     search_url = f"https://www.pricecharting.com/search-products?q={query.replace(' ', '+')}&type=videogames"
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
@@ -20,55 +26,51 @@ def get_price(query):
             name = row.find('td', class_='title').text.strip()
             p_loose = row.find('td', class_='price numeric loose').text.strip()
             p_cib = row.find('td', class_='price numeric cib').text.strip()
-            # Conversion € (1.08)
             l_euro = f"{float(p_loose.replace('$','').replace(',',''))/1.08:.2f} €"
             c_euro = f"{float(p_cib.replace('$','').replace(',',''))/1.08:.2f} €"
             return name, l_euro, c_euro
-    except: return None, None, None
-    return None, None, None
+    except: return None
+    return None
 
 st.title("🎮 Argame")
 
-# --- SECTION SCANNER (Appareil photo masqué par défaut) ---
-st.subheader("📸 Scan de jeu")
-if "show_camera" not in st.session_state:
-    st.session_state.show_camera = False
+# --- INTERFACE SCAN ---
+if "show_cam" not in st.session_state:
+    st.session_state.show_cam = False
 
-if not st.session_state.show_camera:
-    if st.button("Ouvrir le Scanner / Appareil Photo"):
-        st.session_state.show_camera = True
-        st.rerun()
-else:
-    if st.button("Fermer la caméra"):
-        st.session_state.show_camera = False
-        st.rerun()
-    
-    img_file = st.camera_input("Placez le code-barre ou le jeu devant l'objectif")
+if st.button("📸 Scanner un jeu (Code-barre ou Étiquette)"):
+    st.session_state.show_cam = True
+
+if st.session_state.show_cam:
+    img_file = st.camera_input("Prenez une photo bien nette")
     
     if img_file:
-        # Lecture du code-barre
         file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
-        opencv_image = cv2.imdecode(file_bytes, 1)
-        det_barcodes = decode(opencv_image)
+        img = cv2.imdecode(file_bytes, 1)
         
-        if det_barcodes:
-            barcode_data = det_barcodes[0].data.decode('utf-8')
-            st.success(f"Code-barre détecté : {barcode_data}")
-            # On peut essayer de chercher le prix directement avec le code
-            name, l, c = get_price(barcode_data)
-            if name:
-                st.metric(name, f"Loose: {l} | CIB: {c}")
+        # Tentative 1 : Code-barre
+        barcodes = decode(img)
+        if barcodes:
+            code = barcodes[0].data.decode('utf-8')
+            st.success(f"Code-barre détecté : {code}")
+            res = get_price(code)
+            if res: st.metric(res[0], f"{res[1]} (Loose)")
+        
+        # Tentative 2 : OCR Optimisé
         else:
-            st.warning("Aucun code-barre lisible. Essayez de mieux l'éclairer.")
-
-st.divider()
-
-# --- RECHERCHE MANUELLE ---
-query = st.text_input("Ou tapez le nom du jeu :")
-if query:
-    name, l, c = get_price(query)
-    if name:
-        st.success(f"Résultat : {name}")
-        st.write(f"**Loose :** {l} | **Complet :** {c}")
-    else:
-        st.error("Jeu non trouvé.")
+            processed_img = preprocess_for_ocr(img)
+            # On montre l'image traitée pour aider l'utilisateur à voir ce que l'IA voit
+            with st.expander("Voir ce que l'IA analyse"):
+                st.image(processed_img, caption="Image filtrée")
+            
+            text = pytesseract.image_to_string(processed_img, config='--psm 3')
+            clean_text = text.strip().replace('\n', ' ')
+            
+            if len(clean_text) > 2:
+                st.info(f"Texte lu : {clean_text}")
+                res = get_price(clean_text)
+                if res:
+                    st.success(f"Jeu identifié : {res[0]}")
+                    st.write(f"Prix estimé : **{res[1]}**")
+            else:
+                st.error("Lecture impossible. Rapprochez-vous du titre du jeu.")
