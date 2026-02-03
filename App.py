@@ -1,37 +1,30 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+import cv2
+import numpy as np
+from pyzbar.pyzbar import decode
+import pytesseract
 import pandas as pd
 import os
 from datetime import datetime
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION & STYLE ---
 st.set_page_config(page_title="Argame Retro", page_icon="🎮", layout="centered")
 
-# --- DESIGN GAMEBOY (Le retour du look que tu aimes) ---
 st.markdown("""
     <style>
     .stApp { background-color: #9ca0a8 !important; }
-    
-    /* Force tout le texte en NOIR et LISIBLE */
     html, body, [class*="css"], .stMarkdown, p, h1, h2, h3, label, span {
         color: #000000 !important;
         font-family: 'Helvetica', sans-serif !important;
         font-weight: bold !important;
     }
-
-    /* Le menu latéral en gris clair */
-    [data-testid="stSidebar"] {
-        background-color: #bdc3c7 !important;
-    }
-
-    /* Écran vert LCD pour les résultats */
+    [data-testid="stSidebar"] { background-color: #bdc3c7 !important; }
     .stAlert, div[data-testid="stExpander"] {
         background-color: #8bac0f !important;
         border: 3px solid #333 !important;
     }
-
-    /* Boutons rouges A/B */
     div.stButton > button {
         background-color: #8b1d44 !important;
         color: white !important;
@@ -43,45 +36,35 @@ st.markdown("""
 
 DB_FILE = "ma_collection.csv"
 
-# --- MOTEUR DE RECHERCHE "TOUT TERRAIN" ---
+# --- MOTEUR DE PRIX ---
 def get_price(query):
     query = query.strip()
     url = f"https://www.pricecharting.com/search-products?q={query.replace(' ', '+')}&type=videogames"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
         r = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(r.text, 'html.parser')
-
-        # On cherche les prix dans n'importe quel format (liste ou fiche)
-        name = ""
-        p_loose = "0"
-        p_cib = "0"
-
-        # Si c'est une liste
+        name, p_loose, p_cib = "", "0", "0"
+        
         row = soup.find('tr', id=lambda x: x and x.startswith('product-'))
         if row:
             name = row.find('td', class_='title').text.strip()
             p_loose = row.find('td', class_='price numeric loose').text.strip()
             p_cib = row.find('td', class_='price numeric cib').text.strip()
         else:
-            # Si c'est une fiche directe
             title_tag = soup.find('h1', class_='title')
             if title_tag:
                 name = title_tag.text.strip()
-                # On cherche les prix par ID
-                loose_tag = soup.find('td', id='loose_price')
-                cib_tag = soup.find('td', id='cib_price')
-                p_loose = loose_tag.text.strip() if loose_tag else "0"
-                p_cib = cib_tag.text.strip() if cib_tag else "0"
+                l_tag = soup.find('td', id='loose_price')
+                c_tag = soup.find('td', id='cib_price')
+                p_loose = l_tag.text.strip() if l_tag else "0"
+                p_cib = c_tag.text.strip() if c_tag else "0"
 
         if name:
-            # Nettoyage et conversion $ -> €
             l = float(p_loose.replace('$','').replace(',','').strip()) / 1.08
             c = float(p_cib.replace('$','').replace(',','').strip()) / 1.08
             return {"nom": name, "loose": round(l, 2), "cib": round(c, 2)}
-    except:
-        return None
+    except: return None
     return None
 
 def load_db():
@@ -89,19 +72,42 @@ def load_db():
         return pd.read_csv(DB_FILE)
     return pd.DataFrame(columns=["Jeu", "Prix Loose (€)", "Prix CIB (€)", "Date"])
 
-# --- MENU DÉROULANT (SIDEBAR) ---
+# --- MENU ---
 with st.sidebar:
     st.title("🕹️ MENU")
-    page = st.radio("ALLER À :", ["🔍 SCANNER / CHERCHER", "📦 MA COLLECTION"])
+    page = st.sidebar.radio("ALLER À :", ["🔍 SCANNER / CHERCHER", "📦 MA COLLECTION"])
 
-# --- LOGIQUE DES PAGES ---
+# --- PAGE SCANNER ---
 if page == "🔍 SCANNER / CHERCHER":
-    st.title("📟 RECHERCHE")
+    st.title("📟 SCANNER UN JEU")
     
-    jeu_cherche = st.text_input("NOM DU JEU :", placeholder="Ex: Tetris Gameboy")
+    # 1. Option Photo / Scan
+    img_file = st.camera_input("SCANNE LE CODE-BARRE OU LE TITRE")
+    
+    query_found = ""
+    
+    if img_file:
+        file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, 1)
+        
+        # Détection Code-Barres
+        barcodes = decode(img)
+        if barcodes:
+            query_found = barcodes[0].data.decode('utf-8')
+            st.info(f"Code-barres détecté : {query_found}")
+        else:
+            # OCR si pas de code-barre
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            query_found = pytesseract.image_to_string(gray).strip()
+            if len(query_found) > 3:
+                st.info(f"Texte lu sur l'image : {query_found}")
+
+    # 2. Option Manuelle (ou pré-remplie par le scan)
+    st.write("---")
+    jeu_cherche = st.text_input("NOM DU JEU (OU VALEUR SCANNEE) :", value=query_found)
     
     if jeu_cherche:
-        with st.spinner('Recherche...'):
+        with st.spinner('Recherche du prix...'):
             res = get_price(jeu_cherche)
             if res:
                 st.success(f"TROUVÉ : {res['nom']}")
@@ -114,19 +120,19 @@ if page == "🔍 SCANNER / CHERCHER":
                     new_row = {"Jeu": res['nom'], "Prix Loose (€)": res['loose'], "Prix CIB (€)": res['cib'], "Date": datetime.now().strftime("%d/%m/%Y")}
                     db = pd.concat([db, pd.DataFrame([new_row])], ignore_index=True)
                     db.to_csv(DB_FILE, index=False)
-                    st.toast("Jeu ajouté !")
+                    st.toast("C'est dans la boîte !")
             else:
-                st.error("Jeu non trouvé. Essayez un nom plus court (ex: 'Mario 64' au lieu de 'Super Mario 64 version PAL')")
+                st.error("Rien trouvé. Vérifie l'orthographe ou tape le nom manuellement.")
 
-else:
+else: # --- PAGE COLLECTION ---
     st.title("📦 MA COLLECTION")
     db = load_db()
     if not db.empty:
         total = db["Prix Loose (€)"].sum()
         st.subheader(f"VALEUR TOTALE : {round(total, 2)} €")
-        st.dataframe(db) # Affiche la liste proprement
-        if st.button("🗑️ VIDER TOUT"):
-            os.remove(DB_FILE)
+        st.dataframe(db, use_container_width=True)
+        if st.button("🗑️ TOUT SUPPRIMER"):
+            if os.path.exists(DB_FILE): os.remove(DB_FILE)
             st.rerun()
     else:
-        st.info("La collection est vide.")
+        st.info("Ta collection est vide.")
