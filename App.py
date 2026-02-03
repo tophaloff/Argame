@@ -9,15 +9,58 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# --- CONFIGURATION & STYLE ---
-st.set_page_config(page_title="Argame Pro", page_icon="🎮", layout="wide")
+# --- CONFIGURATION & STYLE GAMEBOY ---
+st.set_page_config(page_title="Argame Retro", page_icon="🎮", layout="centered")
+
+# Injection CSS pour le look GameBoy
+st.markdown("""
+    <style>
+    /* Fond de la coque GameBoy */
+    .main {
+        background-color: #9ca0a8; 
+    }
+    /* Style de l'écran (vert LCD) */
+    .stApp {
+        background-color: #9ca0a8;
+    }
+    div.stButton > button {
+        background-color: #8b1d44; /* Rouge boutons A/B */
+        color: white;
+        border-radius: 20px;
+        border: 2px solid #555;
+        font-weight: bold;
+        box-shadow: 2px 2px 0px #333;
+    }
+    div.stButton > button:hover {
+        background-color: #a02050;
+        color: white;
+    }
+    /* Style des zones de texte */
+    .stTextInput>div>div>input {
+        background-color: #8bac0f; /* Vert écran LCD */
+        color: #0f380f;
+        font-family: 'Courier New', Courier, monospace;
+        border: 2px solid #333;
+    }
+    /* Cartes de collection */
+    .css-1r6slb0 {
+        background-color: #8bac0f;
+        border: 3px solid #333;
+        padding: 10px;
+    }
+    h1, h2, h3 {
+        color: #333;
+        text-transform: uppercase;
+        font-family: 'Courier New', Courier, monospace;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 DB_FILE = "ma_collection.csv"
 
 # --- FONCTIONS TECHNIQUES ---
 
 def get_price(query):
-    """Cherche le prix sur PriceCharting et convertit en €"""
     if not query or len(query) < 3: return None
     url = f"https://www.pricecharting.com/search-products?q={query.replace(' ', '+')}&type=videogames"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -29,7 +72,6 @@ def get_price(query):
             name = row.find('td', class_='title').text.strip()
             p_loose = row.find('td', class_='price numeric loose').text.strip()
             p_cib = row.find('td', class_='price numeric cib').text.strip()
-            # Nettoyage et conversion ($ -> € / 1.08)
             val_loose = float(p_loose.replace('$','').replace(',','')) / 1.08
             val_cib = float(p_cib.replace('$','').replace(',','')) / 1.08
             return {"nom": name, "loose": round(val_loose, 2), "cib": round(val_cib, 2)}
@@ -37,31 +79,38 @@ def get_price(query):
     return None
 
 def load_db():
-    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE)
-    return pd.DataFrame(columns=["Jeu", "Prix Loose (€)", "Prix CIB (€)", "Date Ajout"])
+    cols = ["Jeu", "Prix Loose (€)", "Prix CIB (€)", "Date Ajout"]
+    if os.path.exists(DB_FILE):
+        try:
+            df = pd.read_csv(DB_FILE)
+            # Correction : on vérifie que toutes les colonnes existent
+            if all(c in df.columns for c in cols):
+                return df
+            else:
+                # Si colonnes manquantes, on reset proprement
+                return pd.DataFrame(columns=cols)
+        except:
+            return pd.DataFrame(columns=cols)
+    return pd.DataFrame(columns=cols)
 
 # --- INTERFACE ---
-st.sidebar.title("🎮 Argame")
-menu = st.sidebar.radio("Navigation", ["🔍 Scanner & Rechercher", "📦 Ma Collection"])
+st.sidebar.markdown("### 🕹️ CONTROLS")
+menu = st.sidebar.radio("SELECT MODE", ["🔍 SCANNER", "📦 COLLECTION"])
 
-if menu == "🔍 Scanner & Rechercher":
-    st.title("Scanner un jeu")
+if menu == "🔍 SCANNER":
+    st.title("📟 Argame Scanner")
     
-    # Recherche Manuelle
-    manual_query = st.text_input("Recherche manuelle (nom ou code-barres)")
+    manual_query = st.text_input("INSERT GAME NAME OR EAN")
     
-    # Scanner
-    if st.button("📸 Ouvrir l'appareil photo"):
-        img_file = st.camera_input("Scanner le code-barre ou l'étiquette")
+    if st.button("🔴 START CAMERA"):
+        img_file = st.camera_input("POINT AT BARCODE OR LABEL")
         if img_file:
             file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
             img = cv2.imdecode(file_bytes, 1)
             
-            # 1. Test Code-barre
             barcodes = decode(img)
             query = barcodes[0].data.decode('utf-8') if barcodes else ""
             
-            # 2. Test OCR si pas de code-barre
             if not query:
                 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
                 query = pytesseract.image_to_string(gray).strip()
@@ -69,57 +118,47 @@ if menu == "🔍 Scanner & Rechercher":
             if len(query) > 2: manual_query = query
 
     if manual_query:
-        with st.spinner("Recherche de la cote..."):
-            res = get_price(manual_query)
-            if res:
-                st.success(f"Trouvé : {res['nom']}")
-                c1, c2 = st.columns(2)
-                c1.metric("Loose", f"{res['loose']} €")
-                c2.metric("Complet (CIB)", f"{res['cib']} €")
-                
-                # Ajout à la collection
-                if st.button(f"➕ Ajouter {res['nom']} à ma collection"):
-                    db = load_db()
-                    new_row = {"Jeu": res['nom'], "Prix Loose (€)": res['loose'], "Prix CIB (€)": res['cib'], "Date Ajout": datetime.now().strftime("%d/%m/%Y")}
-                    db = pd.concat([db, pd.DataFrame([new_row])], ignore_index=True)
-                    db.to_csv(DB_FILE, index=False)
-                    st.balloons()
-            else:
-                st.error("Jeu non trouvé. Essayez d'être plus précis.")
+        res = get_price(manual_query)
+        if res:
+            st.markdown(f"**FOUND:** {res['nom']}")
+            col1, col2 = st.columns(2)
+            col1.metric("LOOSE", f"{res['loose']} €")
+            col2.metric("CIB", f"{res['cib']} €")
+            
+            if st.button("➕ SAVE TO COLLECTION"):
+                db = load_db()
+                new_row = {"Jeu": res['nom'], "Prix Loose (€)": res['loose'], "Prix CIB (€)": res['cib'], "Date Ajout": datetime.now().strftime("%d/%m/%Y")}
+                db = pd.concat([db, pd.DataFrame([new_row])], ignore_index=True)
+                db.to_csv(DB_FILE, index=False)
+                st.success("SAVED!")
+        else:
+            st.error("NOT FOUND")
 
-else: # --- PAGE COLLECTION ---
-    st.title("📦 Ma Collection")
+else:
+    st.title("📦 MY GAMES")
     db = load_db()
     
     if not db.empty:
-        # Stats rapides
-        total_loose = db["Prix Loose (€)"].sum()
-        st.subheader(f"Valeur totale estimée (Loose) : {round(total_loose, 2)} €")
+        total = db["Prix Loose (€)"].sum()
+        st.subheader(f"TOTAL VALUE: {round(total, 2)} €")
         
-        # Actions
-        col_actu, col_del = st.columns(2)
-        
-        if col_actu.button("🔄 Actualiser tous les prix"):
-            new_prices_loose = []
-            new_prices_cib = []
-            bar = st.progress(0)
-            for i, row in db.iterrows():
-                upd = get_price(row['Jeu'])
-                new_prices_loose.append(upd['loose'] if upd else row['Prix Loose (€)'])
-                new_prices_cib.append(upd['cib'] if upd else row['Prix CIB (€)'])
-                bar.progress((i + 1) / len(db))
-            db["Prix Loose (€)"] = new_prices_loose
-            db["Prix CIB (€)"] = new_prices_cib
-            db.to_csv(DB_FILE, index=False)
-            st.rerun()
+        if st.button("🔄 UPDATE ALL PRICES"):
+            with st.spinner("UPDATING..."):
+                for i, row in db.iterrows():
+                    upd = get_price(row['Jeu'])
+                    if upd:
+                        db.at[i, "Prix Loose (€)"] = upd['loose']
+                        db.at[i, "Prix CIB (€)"] = upd['cib']
+                db.to_csv(DB_FILE, index=False)
+                st.rerun()
 
-        # Affichage avec option de suppression
+        st.markdown("---")
         for index, row in db.iterrows():
-            with st.expander(f"{row['Jeu']} - {row['Prix Loose (€)']} €"):
-                st.write(f"Ajouté le : {row['Date Ajout']}")
-                if st.button(f"🗑️ Supprimer", key=f"del_{index}"):
+            with st.expander(f"🎮 {row['Jeu']}"):
+                st.write(f"Loose: {row['Prix Loose (€)']} € | CIB: {row['Prix CIB (€)']} €")
+                if st.button(f"🗑️ DELETE", key=f"del_{index}"):
                     db = db.drop(index)
                     db.to_csv(DB_FILE, index=False)
                     st.rerun()
     else:
-        st.info("Votre collection est vide. Commencez par scanner un jeu !")
+        st.info("EMPTY COLLECTION")
